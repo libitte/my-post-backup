@@ -1,0 +1,65 @@
+
+
+スレッドとプロセスの違い (箇条書きメモ)
+==================================================
+
+スレッドのプロセスがいまいちよくわからなくなったのでさくっと調べたものを箇条書きでメモしておきます。
+&nbsp;
+
+### プロセス
+* プロセスはプログラムの実行単位のこと
+  * リソースを共有するには別プロセスのリソースをコピーしてこなければならない。
+  * プロセスが実行するプログラム内の変数は各プロセスごとに固有の領域が物理メモリ上に確保され、仮想メモリに割り当てられる
+&nbsp;
+
+### スレッド
+* スレッドはプロセスがforkした並列動作可能な処理の単位
+  * プロセスがforkし生成される実行単位
+    * 1プロセスから並列でスレッドを起動することができる
+    * これらはリソースを共有することができる
+  * 実はプロセスもスレッドの一種
+
+&nbsp;
+
+### Ref.
+
+* [プロセスとスレッドの違い](http://www.imokuri123.com/blog/2013/12/difference-between-process-and-thread.html)
+* [Linux Performance and Tuning Guidelines](http://www.redbooks.ibm.com/redpapers/pdfs/redp4285.pdf)
+* [意味の違いがわかる？ タスクとプロセスとスレッド](http://ascii.jp/elem/000/000/653/653041/)
+
+Setup Octopress
+==================================================
+
+まだ実導入していないのですがとりあえずメモしておきます。
+
+1- Octopress を取ってくる
+
+```bash
+git clone git://github.com/imathis/octopress.git octopress
+cd octopress
+```
+
+2- rbenv 経由で使用したいバージョンのrubyをインストールし、localにセットした上で、bundler経由で依存gemのインストール
+
+```bash
+rbenv install 2.1.3
+rbenv local 2.1.3
+bundle install
+```
+
+3- デフォルトの Octopress テーマをインストール
+
+```bash
+$ bundle exec rake install
+## Copying classic theme into ./source and ./sass
+mkdir -p source
+cp -r .themes/classic/source/. source
+mkdir -p sass
+cp -r .themes/classic/sass/. sass
+mkdir -p source/_posts
+mkdir -p public
+```
+
+### Ref.
+
+* http://octopress.org/docs/setup/

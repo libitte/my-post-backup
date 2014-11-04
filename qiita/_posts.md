@@ -1,3 +1,40 @@
+Setup Octopress
+==================================================
+
+まだ実導入していないのですがとりあえずメモしておきます。
+
+1- Octopress を取ってくる
+
+```bash
+git clone git://github.com/imathis/octopress.git octopress
+cd octopress
+```
+
+2- rbenv 経由で使用したいバージョンのrubyをインストールし、localにセットした上で、bundler経由で依存gemのインストール
+
+```bash
+rbenv install 2.1.3
+rbenv local 2.1.3
+bundle install
+```
+
+3- デフォルトの Octopress テーマをインストール
+
+```bash
+$ bundle exec rake install
+## Copying classic theme into ./source and ./sass
+mkdir -p source
+cp -r .themes/classic/source/. source
+mkdir -p sass
+cp -r .themes/classic/sass/. sass
+mkdir -p source/_posts
+mkdir -p public
+```
+
+### Ref.
+
+* http://octopress.org/docs/setup/
+
 
 
 
