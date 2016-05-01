@@ -1,3 +1,287 @@
+
+
+
+http://crunchtimer.jp/blog/technology/aws/2234/
+http://bayashi.net/wiki/linux/mysql/connections_threads
+http://dev.mysql.com/doc/refman/5.5/en/processlist-table.html
+
+processlist とはなにか
+
+
+
+
+Amazon RDS な MySQL で 不要 process を kill する
+==================================================
+
+MySQL で `Too many connections` が発生しました。
+`processlist` を確認したところ、Command が Sleep なプロセスが多く発生しており、
+結果最大接続数の上限に達してしまうことで発生していたのでした。
+Sleep なプロセスが接続を持ったまま残っていることは問題なので、これを削除することとします。
+
+
+まずは processlist を表示します。
+
+`show full processlist` を実行するか、`select * from information_schema.PROCESSLIST` を実行します。
+
+COMMAND が 'Sleep' で、TIME が 1000 以上のものを抽出するには下記のようにします。
+
+```
+mysql> select * from information_schema.PROCESSLIST where USER='user' and COMMAND='Sleep' and TIME > 1000;
+```
+
+これらの process を一気に kill するためにコマンドを作ります。
+
+```
+mysql -uroot -hhostname testdb -p -e "select concat('KILL ', id, ';') from information_schema.PROCESSLIST where USER='mery_db_user' and Command='Sleep' and TIME > 1000;" > /tmp/a.txt
+```
+
+mysql 上で source するか、shell上で 流し込みます。
+
+```
+mysql> source /tmp/a.txt
+```
+
+
+ちなみに、Amazon RDS だと kill で process を kill できません...
+
+```
+mysql> kill 64890;
+ERROR 1095 (HY000): You are not owner of thread 64890
+```
+
+そのような場合には `mysql.rds_kill` を使って kill します。
+
+```
+mysql> CALL mysql.rds_kill(66825542);
+Query OK, 0 rows affected (0.00 sec)
+```
+
+
+`show full processlist` と `select * from information_schema.PROCESSLIST`
+
+```
+root@localhost[footest]:4> show full processlist ;
++-----+------+-----------+----------+---------+-------+-------+-----------------------+
+| Id  | User | Host      | db       | Command | Time  | State | Info                  |
++-----+------+-----------+----------+---------+-------+-------+-----------------------+
+| 774 | root | localhost | foo     | Sleep   |    55 |       | NULL                  |
+| 775 | root | localhost | NULL     | Sleep   |    24 |       | NULL                  |
+| 918 | root | localhost | foo     | Sleep   | 13242 |       | NULL                  |
+| 933 | root | localhost | footest | Sleep   | 21712 |       | NULL                  |
+| 965 | root | localhost | foo     | Sleep   | 21472 |       | NULL                  |
+| 969 | root | localhost | footest | Query   |     0 | init  | show full processlist |
++-----+------+-----------+----------+---------+-------+-------+-----------------------+
+6 rows in set (0.00 sec)
+
+root@localhost[footest]:5> select * from information_schema.PROCESSLIST;
++-----+------+-----------+----------+---------+-------+-----------+----------------------------------------------+
+| ID  | USER | HOST      | DB       | COMMAND | TIME  | STATE     | INFO                                         |
++-----+------+-----------+----------+---------+-------+-----------+----------------------------------------------+
+| 965 | root | localhost | foo     | Sleep   | 21640 |           | NULL                                         |
+| 918 | root | localhost | foo     | Sleep   | 13410 |           | NULL                                         |
+| 969 | root | localhost | footest | Query   |     0 | executing | select * from information_schema.PROCESSLIST |
+| 774 | root | localhost | foo     | Sleep   |    43 |           | NULL                                         |
+| 775 | root | localhost | NULL     | Sleep   |     2 |           | NULL                                         |
+| 933 | root | localhost | footest | Sleep   | 21880 |           | NULL                                         |
++-----+------+-----------+----------+---------+-------+-----------+----------------------------------------------+
+6 rows in set (0.02 sec)
+```
+
+
+## Ref
+* https://forums.aws.amazon.com/message.jspa?messageID=337243
+* http://hsuzuki.hatenablog.com/entry/2014/05/13/105649
+* http://stackoverflow.com/questions/1903838/how-do-i-kill-all-the-processes-in-mysql-show-processlist
+
+
+
+配列における `<<` と `+` の違い
+==================================================
+
+
+`a = [1, 2, 3]` に `b = [4, 5, 6]` を `a << b`  とかで突っ込むと `b` は `a` の1要素として入ります。
+
+つまり、`[1, 2, 3, [4, 5, 6]]` ですね。
+
+これを平坦化したいときには `a.flatten!` とかやると `a` が破壊的に平坦化されます。
+
+
+```ruby
+[1, 2, 3, 4, 5, 6]
+```
+
+&nbsp;
+
+しかし、最初からこれを得たいときには `+` のほうが処理が自然です。
+
+`a + b` とかすることで得られます。
+
+でもこれは破壊的メソッドとかがないのでこの値が欲しい時には代入して得る必要があります。
+
+
+```ruby
+c = a + b
+```
+
+
+
+&nbsp;
+
+例えば配列 `a` に `b` を足してランダム化したものは
+
+
+```ruby
+(a + b).shuffle
+```
+
+
+とか
+
+
+```ruby
+(a << b).flatten!.sort_by{rand}
+```
+
+
+とかとすれば得ることができます。
+
+
+MySQL の分離レベルとか自動コミットとか
+==================================================
+
+
+今回は分離レベルの話と自動コミットについて雑多なメモを。
+
+&nbsp;
+<h3>分離レベル</h3>
+MySQL InnoDB のデフォルト分離レベルは REPEATABLE-READ になっています。
+
+このモードはダーティーリードは禁止するものの、ファントムリードなどは発生するというやつで、
+4つの分離レベルの中で2番目に厳しいトランザクション独立性を持ちます。
+<ul>
+  <li>READ UNCOMMITTED</li>
+  <li>READ COMMITTED</li>
+  <li>REPEATABLE READ</li>
+  <li>SERIALIZABLE</li>
+</ul>
+でも僕は READ COMMITED を使うことが多いです。
+理由はパフォーマンスです。
+
+また、READ COMMITED の場合、コミットされたデータは別のトランザクションから参照可能です。
+これにより、別トランザクション内でも無駄にクエリを発行することを防いだりすることができたりするメリットもあります。
+
+&nbsp;
+<h3>自動コミット</h3>
+MySQL には自動コミットというのがあります。
+これが有効の場合、更新系クエリは即座にコミットされてしまいます。
+一方トランザクションを使うと、明示的に commit, rollback をしない限り更新が確定されません。
+
+これは複数処理を一つのトランザクションとして all or nothing を実現したいときに便利です。
+(Webアプリケーションを作成するときによく見かける方針だと思います。)
+
+それで、これを命令するのが
+
+start transaction, begin, set autocommit = 0
+
+だったりします。
+
+一つの起動プロセスの中で何度かトランザクション処理をするときには
+AUTO COMMIT モードをOFFにしてしまったほうがらくだと思います。
+
+そういう時には
+
+```mysql
+select @@autocommit;
+set autocommit = 0
+select @@autocommit;
+```
+
+とかで確認、設定してしまって、トランザクション処理を行うのがオススメです。
+
+一方で一つのトランザクション処理しかしないよー、という場合には、
+start transaction とか begin を使うのもいいと思います。
+
+このへんはおこのみですね。
+
+&nbsp;
+<h3>Ref.</h3>
+<ul>
+  <li><a title="http://orangain.hatenablog.com/entry/django-mysql-transaction" href="http://orangain.hatenablog.com/entry/django-mysql-transaction" target="_blank">http://orangain.hatenablog.com/entry/django-mysql-transaction</a></li>
+  <li><a title="http://d.hatena.ne.jp/fat47/20140212/1392171784" href="http://d.hatena.ne.jp/fat47/20140212/1392171784" target="_blank">http://d.hatena.ne.jp/fat47/20140212/1392171784</a></li>
+  <li><a title="http://open-groove.net/mysql/autocommit/" href="http://open-groove.net/mysql/autocommit/" target="_blank">http://open-groove.net/mysql/autocommit/</a></li>
+</ul>
+
+
+**args は引数として期待していないハッシュが送られてきた時にとりあえず受け取ってくれるものらしい
+==================================================
+
+
+```ruby
+def log(msg, level: "ERROR", time: Time.now)
+  puts "#{ time.ctime } [#{ level }] #{ msg }"
+end
+```
+
+みたいなメソッドがあった時に、正しくハッシュを渡してやると
+
+```ruby
+log('Hi!', level: 'ERROR', time: Time.now) #=> Thu Nov 13 01:42:07 2014 [ERROR] Hi!
+```
+
+みたいに返ってくるわけなのですが、これに対して余分なハッシュを送った場合、下記のように例外を吐きます。
+
+```ruby
+log('Hi!', level: 'ERROR', time: Time.now, date: Time.now) #=> ArgumentError: unknown keyword: date
+```
+
+もしこれが嫌なとき、つまり期待するハッシュ以外のハッシュがきても別にスルーしてほしい時などには `**` で受け取ってやるといいみたいです。
+
+こんなかんじで。
+
+```ruby
+def log(msg, level: "ERROR", time: Time.now, **kwrest)
+  puts "#{ time.ctime } [#{ level }] #{ msg }"
+end
+```
+
+&nbsp;
+
+そうすれば期待しないハッシュを送っても例外を吐きません。
+
+```ruby
+log('Hi!', level: 'ERROR', time: Time.now, date: Time.now) #=> Thu Nov 13 01:45:11 2014 [ERROR] Hi!
+log('Hi!', date: Time.now) #=> Thu Nov 13 01:45:19 2014 [ERROR] Hi!
+```
+
+<h3>Ref.</h3>
+<ul>
+  <li><a href="http://magazine.rubyist.net/?0041-200Special-kwarg" target="_blank">るびま Ruby 2.0.0 のキーワード引数</a></li>
+</ul>
+
+
+binding.pry から脱出するコマンド
+==================================================
+
+
+binding.pry は debug の際に step 実行を行うことができ非常に便利なものです。
+ただ脱出方法がいまいちわからず RSpec などで複数のテストケースを実行してしまう時など Ctrl + D の連打はつらいものがありました。
+それでちょっと調べてみたらすぐにでてきました・・・。
+
+```ruby
+exit!
+```
+
+とかで脱出できるみたいです。
+他にも `exit-program` や `disable-pry` などを使う人もいるみたいです。
+
+### Ref.
+
+* [How do I step out of a loop with Ruby Pry?](http://stackoverflow.com/questions/8015531/how-do-i-step-out-of-a-loop-with-ruby-pry)
+* [RubyistならデバッグにはPryのbinding.pryがおすすめ](http://blog.livedoor.jp/sasata299/archives/51841232.html)
+* [#280 Pry with Rails](http://railscasts.com/episodes/280-pry-with-rails)
+
+
+
 Setup Octopress
 ==================================================
 
